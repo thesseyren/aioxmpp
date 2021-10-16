@@ -1098,6 +1098,72 @@ class XMPPLexicalHandler:
         pass
 
 
+class NonRootXMLParser:
+
+    def __init__(self):
+        self._parser = make_parser()
+        self._parser.setContentHandler(self)
+        self._content_handler = None
+
+        self._depth = 0
+        self._started = False
+
+    def setContentHandler(self, handler):
+        self._content_handler = handler
+
+    def feed(self, blob):
+        self._parser.feed(blob)
+
+    # callbacks
+
+    def startDocument(self):
+        if not self._started:
+            self._started = True
+            self._content_handler.startDocument()
+
+    def endDocument(self):
+        self._started = False
+        self._content_handler.endDocument()
+
+    def startPrefixMapping(self, prefix, uri):
+        self._content_handler.startPrefixMapping(prefix, uri)
+
+    def endPrefixMapping(self, prefix):
+        self._content_handler.endPrefixMapping(prefix)
+
+    def startElement(self, name, attrs):
+        self._depth += 1
+        self._content_handler.startElement(name, attrs)
+
+    def endElement(self, name):
+        self._depth -= 1
+        if self._depth == 0:
+            self._parser.reset()
+        self._content_handler.endElement(name)
+
+    def startElementNS(self, name, qname, attrs):
+        self._depth += 1
+        self._content_handler.startElementNS(name, qname, attrs)
+
+    def endElementNS(self, name, qname):
+        self._depth -= 1
+        if self._depth == 0:
+            self._parser.reset()
+        self._content_handler.endElementNS(name, qname)
+
+    def characters(self, content):
+        self._content_handler.characters(content)
+
+    def ignorableWhitespace(self, whitespace):
+        self._content_handler.ignorableWhitespace(whitespace)
+
+    def processingInstruction(self, target, data):
+        self._content_handler.processingInstruction(target, data)
+
+    def skippedEntity(self, name):
+        self._content_handler.skippedEntity(name)
+
+
 def make_parser():
     """
     Create a parser which is suitably configured for parsing an XMPP XML
