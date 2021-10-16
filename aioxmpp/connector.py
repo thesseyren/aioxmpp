@@ -57,6 +57,7 @@ import aioxmpp.errors as errors
 import aioxmpp.nonza as nonza
 import aioxmpp.protocol as protocol
 import aioxmpp.ssl_transport as ssl_transport
+from aioxmpp.websocket import WebsocketXMLStream, WebsocketTransport
 
 
 def to_ascii(s):
@@ -378,5 +379,46 @@ class XMPPOverTLSConnector(BaseConnector):
             raise
 
         stream.deadtime_hard_limit = timedelta(seconds=negotiation_timeout)
+
+        return transport, stream, await features_future
+
+
+class XMPPOverWebsocketConnector(BaseConnector):
+    def __init__(self,
+                 url="wss://{host}:{port}/ws",
+                 decode=None,
+                 **options):
+        self.url = url
+        self.decode = decode
+        self.connection_options = options
+        self.connection_options["protocols"] = ("xmpp",)
+
+    @property
+    def tls_supported(self):
+        return False
+
+    @property
+    def dane_supported(self):
+        return False
+
+    async def connect(self, loop, metadata, domain, host, port,
+                      negotiation_timeout, base_logger=None):
+        if base_logger is not None:
+            logger = base_logger.getChild(type(self).__name__)
+        else:
+            logger = logging.getLogger(".".join([
+                __name__, type(self).__qualname__,
+            ]))
+
+        features_future = asyncio.Future()
+        stream = WebsocketXMLStream(
+            to=domain,
+            features_future=features_future,
+            base_logger=base_logger,
+        )
+        transport = WebsocketTransport(loop, stream, logger, decode=self.decode)
+
+        await transport.create_connection(
+            self.url.format(host=host, port=port), **self.connection_options)
 
         return transport, stream, await features_future

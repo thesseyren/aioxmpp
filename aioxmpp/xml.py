@@ -660,7 +660,87 @@ class XMPPXMLGenerator:
             self._flush = old_flush
 
 
-class XMLStreamWriter:
+class BaseXMLStreamWriter:
+
+    def __init__(self, f, to,
+                 from_=None,
+                 version=(1, 0),
+                 sorted_attributes=False):
+        super().__init__()
+        self._to = to
+        self._from = from_
+        self._version = version
+        self._writer = XMPPXMLGenerator(
+            out=f,
+            short_empty_elements=True,
+            sorted_attributes=sorted_attributes)
+        self._nsmap_to_use = {}
+        self._closed = False
+
+    @property
+    def _attrs(self):
+        attrs = {
+            (None, "to"): str(self._to),
+            (None, "version"): ".".join(map(str, self._version))
+        }
+        if self._from:
+            attrs[None, "from"] = str(self._from)
+        return attrs
+
+    @property
+    def closed(self):
+        """
+        True if the stream has been closed by :meth:`abort` or :meth:`close`.
+        Read-only.
+        """
+        return self._closed
+
+    def send(self, xso):
+        """
+        Send a single XML stream object.
+
+        :param xso: Object to serialise and send.
+        :type xso: :class:`aioxmpp.xso.XSO`
+        :raises Exception: from any serialisation errors, usually
+                           :class:`ValueError`.
+
+        Serialise the `xso` and send it over the stream. If any serialisation
+        error occurs, no data is sent over the stream and the exception is
+        re-raised; the :meth:`send` method thus provides strong exception
+        safety.
+
+        .. warning::
+
+           The behaviour of :meth:`send` after :meth:`abort` or :meth:`close`
+           and before :meth:`start` is undefined.
+
+        """
+        with self._writer.buffer():
+            xso.xso_serialise_to_sax(self._writer)
+
+    def abort(self):
+        """
+        Abort the stream.
+
+        The stream is flushed and the internal data structures are cleaned up.
+        No stream footer is sent. The stream is :attr:`closed` afterwards.
+
+        If the stream is already :attr:`closed`, this method does nothing.
+        """
+        if self._closed:
+            return
+        self._closed = True
+        self._writer.flush()
+        del self._writer
+
+    def start(self):
+        raise NotImplementedError(f"{self.__class__.__name__}.start")
+
+    def close(self):
+        raise NotImplementedError(f"{self.__class__.__name__}.close")
+
+
+class XMLStreamWriter(BaseXMLStreamWriter):
     """
     A convenient class to write a standard conforming XML stream.
 
@@ -709,85 +789,24 @@ class XMLStreamWriter:
                  version=(1, 0),
                  nsmap={},
                  sorted_attributes=False):
-        super().__init__()
-        self._to = to
-        self._from = from_
-        self._version = version
-        self._writer = XMPPXMLGenerator(
-            out=f,
-            short_empty_elements=True,
-            sorted_attributes=sorted_attributes)
+        super().__init__(f, to, from_, version, sorted_attributes)
         self._nsmap_to_use = {
             "stream": namespaces.xmlstream
         }
         self._nsmap_to_use.update(nsmap)
-        self._closed = False
-
-    @property
-    def closed(self):
-        """
-        True if the stream has been closed by :meth:`abort` or :meth:`close`.
-        Read-only.
-        """
-        return self._closed
 
     def start(self):
         """
         Send the stream header as described above.
         """
-        attrs = {
-            (None, "to"): str(self._to),
-            (None, "version"): ".".join(map(str, self._version))
-        }
-        if self._from:
-            attrs[None, "from"] = str(self._from)
-
         self._writer.startDocument()
         for prefix, uri in self._nsmap_to_use.items():
             self._writer.startPrefixMapping(prefix, uri)
         self._writer.startElementNS(
             (namespaces.xmlstream, "stream"),
             None,
-            attrs)
+            self._attrs)
         self._writer.flush()
-
-    def send(self, xso):
-        """
-        Send a single XML stream object.
-
-        :param xso: Object to serialise and send.
-        :type xso: :class:`aioxmpp.xso.XSO`
-        :raises Exception: from any serialisation errors, usually
-                           :class:`ValueError`.
-
-        Serialise the `xso` and send it over the stream. If any serialisation
-        error occurs, no data is sent over the stream and the exception is
-        re-raised; the :meth:`send` method thus provides strong exception
-        safety.
-
-        .. warning::
-
-           The behaviour of :meth:`send` after :meth:`abort` or :meth:`close`
-           and before :meth:`start` is undefined.
-
-        """
-        with self._writer.buffer():
-            xso.xso_serialise_to_sax(self._writer)
-
-    def abort(self):
-        """
-        Abort the stream.
-
-        The stream is flushed and the internal data structures are cleaned up.
-        No stream footer is sent. The stream is :attr:`closed` afterwards.
-
-        If the stream is already :attr:`closed`, this method does nothing.
-        """
-        if self._closed:
-            return
-        self._closed = True
-        self._writer.flush()
-        del self._writer
 
     def close(self):
         """
@@ -868,6 +887,7 @@ class XMPPXMLProcessor:
     def __init__(self):
         super().__init__()
         self._state = ProcessorState.CLEAN
+        self._stream_header_tag = (namespaces.xmlstream, "stream")
         self._stanza_parser = None
         self._stored_exception = None
         self.on_stream_header = None
@@ -955,7 +975,7 @@ class XMPPXMLProcessor:
         elif self._state != ProcessorState.STARTED:
             raise RuntimeError("invalid state: {}".format(self._state))
 
-        if name != (namespaces.xmlstream, "stream"):
+        if name != self._stream_header_tag:
             raise errors.StreamError(
                 errors.StreamErrorCondition.INVALID_NAMESPACE,
                 "stream has invalid namespace or localname"

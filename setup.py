@@ -43,6 +43,7 @@ if sys.version_info < (3, 6):
     sortedcollections_constraint = "sortedcollections~=1.0"
 
 install_requires = [
+    'aiohttp>=0.15.0',
     'aiosasl>=0.3',  # need 0.2+ for LGPLv3
     'aioopenssl>=0.1',
     'babel~=2.3',
