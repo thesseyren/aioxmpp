@@ -2319,6 +2319,59 @@ class TestXMPPLexicalHandler(unittest.TestCase):
         del self.proc
 
 
+class TestNonRootXMLParser(unittest.TestCase):
+    def setUp(self):
+        self.parser = xml.NonRootXMLParser()
+
+    def assertElementNS(self, callback, name, qname, attrs):
+        name_, qname_, attrs_ = callback.call_args.args
+        self.assertEqual(name_, name)
+        self.assertEqual(qname_, qname)
+        self.assertEqual(attrs_._attrs, attrs)
+
+    def test_with_namespace(self):
+        handler = unittest.mock.Mock()
+        self.parser.setContentHandler(handler)
+
+        self.parser.feed("<open xmlns='testspace' xml:lang='en' from='localhost'/>")
+        handler.startPrefixMapping.assert_called_with(None, "testspace")
+        self.assertElementNS(handler.startElementNS, ("testspace", "open"), None, {("http://www.w3.org/XML/1998/namespace", "lang"): "en", (None, "from"): "localhost"})
+        handler.endElementNS.assert_called_with(("testspace", "open"), None)
+        handler.endPrefixMapping.assert_called_with(None)
+
+        self.parser.feed("<stream:features xmlns:stream='http://etherx.jabber.org/streams'>")
+        handler.startPrefixMapping.assert_called_with("stream", "http://etherx.jabber.org/streams")
+        self.assertElementNS(handler.startElementNS, ("http://etherx.jabber.org/streams", "features"), None, {})
+
+        self.parser.feed("<mechanisms xmlns='testspace'>")
+        handler.startPrefixMapping.assert_called_with(None, "testspace")
+        self.assertElementNS(handler.startElementNS, ("testspace", "mechanisms"), None, {})
+
+        self.parser.feed("<mechanism>PLAIN</mechanism>")
+        self.assertElementNS(handler.startElementNS, ("testspace", "mechanism"), None, {})
+        handler.characters.assert_called_with("PLAIN")
+        handler.endElementNS.assert_called_with(("testspace", "mechanism"), None)
+
+        self.parser.feed("</mechanisms>")
+        handler.endElementNS.assert_called_with(("testspace", "mechanisms"), None)
+        handler.endPrefixMapping.assert_called_with(None)
+
+        self.parser.feed("</stream:features>")
+        handler.endElementNS.assert_called_with(("http://etherx.jabber.org/streams", "features"), None)
+        handler.endPrefixMapping.assert_called_with("stream")
+
+        self.parser.feed("<close xmlns='testspace'/>")
+        handler.startPrefixMapping.assert_called_with(None, "testspace")
+        self.assertElementNS(handler.startElementNS, ("testspace", "close"), None, {})
+        handler.endElementNS.assert_called_with(("testspace", "close"), None)
+        handler.endPrefixMapping.assert_called_with(None)
+
+        handler.startDocument.assert_called_once()
+
+    def tearDown(self):
+        del self.parser
+
+
 class Testserialize_single_xso(unittest.TestCase):
     def test_simple(self):
         class TestXSO(xso.XSO):
