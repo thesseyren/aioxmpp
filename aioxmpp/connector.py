@@ -416,9 +416,29 @@ class XMPPOverWebsocketConnector(BaseConnector):
             features_future=features_future,
             base_logger=base_logger,
         )
-        transport = WebsocketTransport(loop, stream, logger, decode=self.decode)
 
-        await transport.create_connection(
-            self.url.format(host=host, port=port), **self.connection_options)
+        verifier = metadata.certificate_verifier_factory()
+        await verifier.pre_handshake(domain, host, port, metadata)
+
+        def context_factory(transport):
+            ssl_context = metadata.ssl_context_factory()
+            verifier.setup_context(ssl_context, transport)
+            return ssl_context
+
+        transport = WebsocketTransport(
+            loop, stream, logger, decode=self.decode,
+            timeout=negotiation_timeout + 1,
+            ssl_context_factory=context_factory,
+        )
+        try:
+            await transport.create_connection(
+                self.url.format(host=host, port=port),
+                **self.connection_options,
+            )
+        except:
+            stream.abort()
+            raise
+
+        stream.deadtime_hard_limit = timedelta(seconds=negotiation_timeout)
 
         return transport, stream, await features_future

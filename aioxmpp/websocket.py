@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 import aiohttp
+import OpenSSL.SSL
 
 from .utils import namespaces
 from .protocol import DebugWrapper, XMLStream
@@ -10,6 +11,7 @@ from .xml import (
     XMPPXMLProcessor,
     NonRootXMLParser,
 )
+from .ssl_transport import create_starttls_connection
 
 
 namespaces.framing = "urn:ietf:params:xml:ns:xmpp-framing"
@@ -87,13 +89,64 @@ class WebsocketXMLStream(XMLStream):
             sorted_attributes=self._sorted_attributes)
 
 
+class AIOOpenSSLHTTPConnector(aiohttp.TCPConnector):
+
+    def __init__(self, *args, ssl, **kwargs):
+        # We always provide a ssl context factory but aiohttp doesn't support
+        # to have a callable for ssl context.
+        super().__init__(*args, ssl=None, **kwargs)
+        self._ssl = ssl
+
+    def _get_ssl_context(self, req: "ClientRequest"):
+        if not req.is_ssl():
+            return None
+        elif req.ssl is None:
+            return self._ssl
+        else:
+            return super()._get_ssl_context(req)
+
+    async def _wrap_create_connection(
+        self,
+        *args,
+        req: "ClientRequest",
+        timeout: "ClientTimeout",
+        client_error=aiohttp.ClientConnectorError,
+        **kwargs,
+    ):
+        ssl = kwargs.get('ssl')
+        if not callable(ssl):
+            return await super()._wrap_create_connection(
+                *args, req=req, timeout=timeout, client_error=client_error,
+                **kwargs)
+
+        try:
+            ceil_timeout = aiohttp.helpers.ceil_timeout # aiohttp>=3.7.0
+        except AttributeError:
+            ceil_timeout = aiohttp.helpers.CeilTimeout # aiohttp<3.7.0
+
+        try:
+            with ceil_timeout(timeout.sock_connect):
+                return await create_starttls_connection(
+                    self._loop, *args,
+                    sock=kwargs.get("sock"),
+                    ssl_context_factory=ssl,
+                    local_addr=kwargs.get("local_addr"),
+                    server_hostname=kwargs.get("server_hostname"),
+                )
+        except OpenSSL.SSL.Error as exc:
+            raise aiohttp.ClientSSLError(req.connection_key, OSError()) from exc
+        except OSError as exc:
+            raise client_error(req.connection_key, exc) from exc
+
+
 class WebsocketTransport(asyncio.Transport):
 
-    def __init__(self, loop, stream, logger, decode=None, ws_connector=None):
+    def __init__(self, loop, stream, logger, timeout, ssl_context_factory, decode=None):
         self.loop = loop
         self.stream = stream
         self.logger = logger
-        self.ws_connector = ws_connector
+        self._timeout = aiohttp.ClientTimeout(total=timeout)
+        self._ssl_context = ssl_context_factory
         self._decode = decode
 
         self.connection = None
@@ -106,9 +159,8 @@ class WebsocketTransport(asyncio.Transport):
         self.logger.debug('Setting up new websocket connection.')
 
         self.session = aiohttp.ClientSession(
-            connector=self.ws_connector,
-            connector_owner=self.ws_connector is None,
-        )
+            connector=AIOOpenSSLHTTPConnector(ssl=self._ssl_context),
+            timeout=self._timeout)
         self.connection = await self.session.ws_connect(*args, **kwargs)
 
         self._reader_task = self.loop.create_task(self.reader())
