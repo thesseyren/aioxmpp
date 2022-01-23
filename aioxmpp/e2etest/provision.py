@@ -808,3 +808,39 @@ class StaticPasswordProvisioner(_AutoConfiguredProvisioner):
     async def teardown(self):
         await super().teardown()
         self.__nused_accounts = 0
+
+
+class AnonymousWebsocketProvisioner(_AutoConfiguredProvisioner):
+
+    def configure(self, section):
+        super().configure(section)
+        self.__host = section.get("host")
+        self._domain = aioxmpp.JID.fromstr(section.get(
+            "domain",
+            self.__host
+        ))
+        self.__port = section.getint("port")
+        self.__security_layer = aioxmpp.make_security_layer(
+            None,
+            anonymous="",
+            **configure_tls_config(
+                section
+            )
+        )
+        self._quirks = configure_quirks(section)
+        self.__url = section.get("url")
+
+    async def _make_client(self, logger):
+        override_peer = []
+        if self.__url is not None:
+            override_peer.append(
+                (self.__host, self.__port,
+                 aioxmpp.connector.XMPPOverWebsocketConnector(self.__url))
+            )
+
+        return aioxmpp.PresenceManagedClient(
+            self._domain,
+            self.__security_layer,
+            override_peer=override_peer,
+            logger=logger,
+        )
