@@ -665,6 +665,7 @@ class BaseXMLStreamWriter:
     def __init__(self, f, to,
                  from_=None,
                  version=(1, 0),
+                 nsmap={},
                  sorted_attributes=False):
         super().__init__()
         self._to = to
@@ -674,7 +675,7 @@ class BaseXMLStreamWriter:
             out=f,
             short_empty_elements=True,
             sorted_attributes=sorted_attributes)
-        self._nsmap_to_use = {}
+        self._nsmap_to_use = nsmap.copy()
         self._closed = False
 
     @property
@@ -789,11 +790,11 @@ class XMLStreamWriter(BaseXMLStreamWriter):
                  version=(1, 0),
                  nsmap={},
                  sorted_attributes=False):
-        super().__init__(f, to, from_, version, sorted_attributes)
-        self._nsmap_to_use = {
+        _nsmap = {
             "stream": namespaces.xmlstream
         }
-        self._nsmap_to_use.update(nsmap)
+        _nsmap.update(nsmap)
+        super().__init__(f, to, from_, version, _nsmap, sorted_attributes)
 
     def start(self):
         """

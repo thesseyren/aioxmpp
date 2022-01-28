@@ -334,7 +334,10 @@ class XMLStream(asyncio.Protocol):
                  base_logger=logging.getLogger("aioxmpp"),
                  default_namespace="jabber:client",
                  from_=None,
-                 loop=None):
+                 loop=None,
+                 xml_parser=xml.make_parser,
+                 xml_processor=xml.XMPPXMLProcessor,
+                 xml_writer=xml.XMLStreamWriter):
         self._to = to
         self._from = from_
         self._sorted_attributes = sorted_attributes
@@ -350,6 +353,9 @@ class XMLStream(asyncio.Protocol):
         self._smachine = statemachine.OrderedStateMachine(State.READY)
         self._transport_closing = False
         self._default_namespace = default_namespace
+        self._parser_class = xml_parser
+        self._processor_class = xml_processor
+        self._writer_class = xml_writer
         self._monitor = utils.AlivenessMonitor(self._loop)
         self._monitor.on_deadtime_hard_limit_tripped.connect(
             self._deadtime_hard_limit_triggered
@@ -627,12 +633,12 @@ class XMLStream(asyncio.Protocol):
     def _reset_state(self):
         self._kill_state()
 
-        self._processor = xml.XMPPXMLProcessor()
+        self._processor = self._processor_class()
         self._processor.stanza_parser = self.stanza_parser
         self._processor.on_stream_header = self._rx_stream_header
         self._processor.on_stream_footer = self._rx_stream_footer
         self._processor.on_exception = self._rx_exception
-        self._parser = xml.make_parser()
+        self._parser = self._parser_class()
         self._parser.setContentHandler(self._processor)
         self._debug_wrapper = None
 
@@ -641,7 +647,7 @@ class XMLStream(asyncio.Protocol):
             self._debug_wrapper = dest
         else:
             dest = self._transport
-        self._writer = xml.XMLStreamWriter(
+        self._writer = self._writer_class(
             dest,
             self._to,
             nsmap={None: self._default_namespace},

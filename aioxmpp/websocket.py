@@ -25,12 +25,8 @@ class WebsocketElements:
 class WebsocketXMLStreamWriter(BaseXMLStreamWriter):
 
     def start(self):
-        for prefix, uri in self._nsmap_to_use.items():
-            self._writer.startPrefixMapping(prefix, uri)
-
         self._writer.startElementNS(WebsocketElements.OPEN, None, self._attrs)
         self._writer.endElementNS(WebsocketElements.OPEN, None)
-
         self._writer.flush()
 
     def close(self):
@@ -40,9 +36,6 @@ class WebsocketXMLStreamWriter(BaseXMLStreamWriter):
 
         self._writer.startElementNS(WebsocketElements.CLOSE, None)
         self._writer.endElementNS(WebsocketElements.CLOSE, None)
-
-        for prefix in self._nsmap_to_use:
-            self._writer.endPrefixMapping(prefix)
         self._writer.endDocument()
         self._writer.flush()
         del self._writer
@@ -61,32 +54,6 @@ class WebsocketXMPPXMLProcessor(XMPPXMLProcessor):
     def endElementNS(self, name, qname):
         if name != WebsocketElements.OPEN:
             super().endElementNS(name, qname)
-
-
-class WebsocketXMLStream(XMLStream):
-
-    def _reset_state(self):
-        self._kill_state()
-
-        self._processor = WebsocketXMPPXMLProcessor()
-        self._processor.stanza_parser = self.stanza_parser
-        self._processor.on_stream_header = self._rx_stream_header
-        self._processor.on_stream_footer = self._rx_stream_footer
-        self._processor.on_exception = self._rx_exception
-        self._parser = NonRootXMLParser()
-        self._parser.setContentHandler(self._processor)
-        self._debug_wrapper = None
-
-        if self._logger.getEffectiveLevel() <= logging.DEBUG:
-            dest = DebugWrapper(self._transport, self._logger)
-            self._debug_wrapper = dest
-        else:
-            dest = self._transport
-
-        self._writer = WebsocketXMLStreamWriter(
-            dest,
-            self._to,
-            sorted_attributes=self._sorted_attributes)
 
 
 class AIOOpenSSLHTTPConnector(aiohttp.TCPConnector):

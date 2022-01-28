@@ -810,11 +810,12 @@ class TestXMLStream(unittest.TestCase):
         st.payload.attr = "foo"
 
         with contextlib.ExitStack() as stack:
-            write_xmlstream = stack.enter_context(unittest.mock.patch(
-                "aioxmpp.xml.XMLStreamWriter"
-            ))
-
             t, p = self._make_stream(to=TEST_PEER)
+
+            write_xmlstream = stack.enter_context(unittest.mock.patch.object(
+                p,
+                "_writer_class",
+            ))
 
             p.connection_made(t)
 

@@ -57,7 +57,9 @@ import aioxmpp.errors as errors
 import aioxmpp.nonza as nonza
 import aioxmpp.protocol as protocol
 import aioxmpp.ssl_transport as ssl_transport
-from aioxmpp.websocket import WebsocketXMLStream, WebsocketTransport
+import aioxmpp.utils as utils
+import aioxmpp.websocket as ws
+import aioxmpp.xml as xml
 
 
 def to_ascii(s):
@@ -411,10 +413,14 @@ class XMPPOverWebsocketConnector(BaseConnector):
             ]))
 
         features_future = asyncio.Future()
-        stream = WebsocketXMLStream(
+        stream = protocol.XMLStream(
             to=domain,
             features_future=features_future,
             base_logger=base_logger,
+            default_namespace=utils.namespaces.framing,
+            xml_parser=xml.NonRootXMLParser,
+            xml_processor=ws.WebsocketXMPPXMLProcessor,
+            xml_writer=ws.WebsocketXMLStreamWriter,
         )
 
         verifier = metadata.certificate_verifier_factory()
@@ -425,7 +431,7 @@ class XMPPOverWebsocketConnector(BaseConnector):
             verifier.setup_context(ssl_context, transport)
             return ssl_context
 
-        transport = WebsocketTransport(
+        transport = ws.WebsocketTransport(
             loop, stream, logger, decode=self.decode,
             timeout=negotiation_timeout + 1,
             ssl_context_factory=context_factory,
