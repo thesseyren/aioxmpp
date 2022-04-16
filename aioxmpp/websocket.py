@@ -1,17 +1,12 @@
 import asyncio
-import logging
 
 import aiohttp
 import OpenSSL.SSL
 
-from .utils import namespaces
-from .protocol import DebugWrapper, XMLStream
-from .xml import (
-    BaseXMLStreamWriter,
-    XMPPXMLProcessor,
-    NonRootXMLParser,
-)
-from .ssl_transport import create_starttls_connection
+import aioxmpp.xml as xml
+import aioxmpp.ssl_transport as ssl_transport
+
+from aioxmpp.utils import namespaces
 
 
 namespaces.framing = "urn:ietf:params:xml:ns:xmpp-framing"
@@ -22,7 +17,7 @@ class WebsocketElements:
     CLOSE = (namespaces.framing, "close")
 
 
-class WebsocketXMLStreamWriter(BaseXMLStreamWriter):
+class WebsocketXMLStreamWriter(xml.BaseXMLStreamWriter):
 
     def start(self):
         self._writer.startElementNS(WebsocketElements.OPEN, None, self._attrs)
@@ -41,7 +36,7 @@ class WebsocketXMLStreamWriter(BaseXMLStreamWriter):
         del self._writer
 
 
-class WebsocketXMPPXMLProcessor(XMPPXMLProcessor):
+class WebsocketXMPPXMLProcessor(xml.XMPPXMLProcessor):
 
     def __init__(self):
         super().__init__()
@@ -93,7 +88,7 @@ class AIOOpenSSLHTTPConnector(aiohttp.TCPConnector):
 
         try:
             with ceil_timeout(timeout.sock_connect):
-                return await create_starttls_connection(
+                return await ssl_transport.create_starttls_connection(
                     self._loop, *args,
                     sock=kwargs.get("sock"),
                     ssl_context_factory=ssl,
